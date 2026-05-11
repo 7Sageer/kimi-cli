@@ -354,25 +354,6 @@ class ACPServer:
             )
             raise acp.RequestError.invalid_params({"model_id": "Model's provider not found"})
 
-        # Thinking mode is pinned to the session once history exists; switching
-        # mid-session corrupts the replayable conversation. Reject the change
-        # here so ACP behaves consistently with the shell `/model` command.
-        session = cli_instance.session
-        pinned_thinking = session.state.thinking
-        if (
-            pinned_thinking is not None
-            and model_id_conv.thinking != pinned_thinking
-            and not session.wire_file.is_empty()
-        ):
-            raise acp.RequestError.invalid_params(
-                {
-                    "thinking": (
-                        f"Thinking mode is pinned to {pinned_thinking} for this "
-                        "session. Start a new session to change it."
-                    ),
-                }
-            )
-
         new_llm = create_llm(
             new_provider,
             new_model,
@@ -389,6 +370,7 @@ class ACPServer:
         config_for_save.default_model = model_id_conv.model_key
         config_for_save.default_thinking = model_id_conv.thinking
         save_config(config_for_save)
+        self.sessions[session_id] = (acp_session, model_id_conv)
 
     async def authenticate(self, method_id: str, **kwargs: Any) -> acp.AuthenticateResponse | None:
         """

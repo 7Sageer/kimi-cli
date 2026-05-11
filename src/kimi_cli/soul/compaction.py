@@ -145,24 +145,28 @@ class SimpleCompaction:
     def prepare(
         self, messages: Sequence[Message], *, custom_instruction: str = ""
     ) -> PrepareResult:
-        if not messages or self.max_preserved_messages <= 0:
+        if not messages or self.max_preserved_messages < 0:
             return self.PrepareResult(compact_message=None, to_preserve=messages)
 
         history = list(messages)
-        preserve_start_index = len(history)
-        n_preserved = 0
-        for index in range(len(history) - 1, -1, -1):
-            if history[index].role in {"user", "assistant"}:
-                n_preserved += 1
-                if n_preserved == self.max_preserved_messages:
-                    preserve_start_index = index
-                    break
+        if self.max_preserved_messages == 0:
+            to_compact = history
+            to_preserve: Sequence[Message] = []
+        else:
+            preserve_start_index = len(history)
+            n_preserved = 0
+            for index in range(len(history) - 1, -1, -1):
+                if history[index].role in {"user", "assistant"}:
+                    n_preserved += 1
+                    if n_preserved == self.max_preserved_messages:
+                        preserve_start_index = index
+                        break
 
-        if n_preserved < self.max_preserved_messages:
-            return self.PrepareResult(compact_message=None, to_preserve=messages)
+            if n_preserved < self.max_preserved_messages:
+                return self.PrepareResult(compact_message=None, to_preserve=messages)
 
-        to_compact = history[:preserve_start_index]
-        to_preserve = history[preserve_start_index:]
+            to_compact = history[:preserve_start_index]
+            to_preserve = history[preserve_start_index:]
 
         if not to_compact:
             # Let's hope this won't exceed the context size limit

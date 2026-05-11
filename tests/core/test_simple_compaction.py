@@ -77,6 +77,24 @@ def test_prepare_builds_compact_message_and_preserves_tail():
     )
 
 
+def test_prepare_with_zero_preserved_messages_compacts_everything():
+    messages = [
+        Message(role="user", content=[TextPart(text="Old question")]),
+        Message(role="assistant", content=[TextPart(text="Old answer")]),
+    ]
+
+    result = SimpleCompaction(max_preserved_messages=0).prepare(messages)
+
+    assert result.compact_message is not None
+    assert result.compact_message.content[:4] == [
+        TextPart(text="## Message 1\nRole: user\nContent:\n"),
+        TextPart(text="Old question"),
+        TextPart(text="## Message 2\nRole: assistant\nContent:\n"),
+        TextPart(text="Old answer"),
+    ]
+    assert result.to_preserve == []
+
+
 # --- CompactionResult.estimated_token_count tests ---
 
 

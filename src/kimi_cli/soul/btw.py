@@ -19,7 +19,7 @@ from kosong.message import Message, ToolCall
 from kosong.tooling import Tool, ToolError, ToolResult
 
 from kimi_cli.soul import LLMNotSet, wire_send
-from kimi_cli.soul.dynamic_injection import normalize_history
+from kimi_cli.soul.history_normalization import llm_uses_thinking, normalize_history_for_llm
 from kimi_cli.soul.message import system_reminder
 from kimi_cli.utils.logging import logger
 from kimi_cli.wire.types import BtwBegin, BtwEnd, TextPart
@@ -79,11 +79,17 @@ class _DenyAllToolset:
 def _build_btw_context(soul: KimiSoul, question: str) -> tuple[str, list[Message], _DenyAllToolset]:
     """Build (system_prompt, history, toolset) aligned with the main agent.
 
-    Uses the same system_prompt, normalize_history(), and tool definitions
-    as ``KimiSoul._step`` so the LLM provider can reuse the prompt cache.
+    Uses the same system_prompt, history normalization, and tool definitions as
+    ``KimiSoul._step`` so the LLM provider can reuse the prompt cache.
     """
     system_prompt = soul._agent.system_prompt  # pyright: ignore[reportPrivateUsage]
-    effective_history = normalize_history(soul.context.history)
+    llm = soul.runtime.llm
+    if llm is None:
+        raise LLMNotSet()
+    effective_history = normalize_history_for_llm(
+        soul.context.history,
+        thinking_enabled=llm_uses_thinking(llm),
+    )
 
     wrapped = f"{system_reminder(SIDE_QUESTION_SYSTEM_REMINDER).text}\n\n{question}"
     side_message = Message(role="user", content=wrapped)

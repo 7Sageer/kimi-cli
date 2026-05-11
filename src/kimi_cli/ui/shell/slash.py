@@ -221,44 +221,26 @@ async def model(app: Shell, args: str):
     capabilities = derive_model_capabilities(selected_model_cfg)
     new_thinking: bool
 
-    # Thinking is pinned to the session once history exists, because
-    # switching modes corrupts the replayable conversation. Detect that here
-    # so we don't prompt the user for a choice we can't honor.
-    session = soul.runtime.session
-    pinned_thinking = session.state.thinking
-    session_thinking_locked = pinned_thinking is not None and not session.wire_file.is_empty()
-
     if "always_thinking" in capabilities:
         new_thinking = True
     elif "thinking" in capabilities:
-        if session_thinking_locked:
-            assert pinned_thinking is not None
-            new_thinking = pinned_thinking
-            if curr_thinking != pinned_thinking:
-                console.print(
-                    "[yellow]Thinking is locked to "
-                    f"{'on' if pinned_thinking else 'off'} for this session. "
-                    "Use /new to start a fresh session if you need to change it."
-                    "[/yellow]"
-                )
-        else:
-            thinking_choices: list[tuple[str, str]] = [
-                ("off", "off" + (" (current)" if not curr_thinking else "")),
-                ("on", "on" + (" (current)" if curr_thinking else "")),
-            ]
-            try:
-                thinking_selection = await ChoiceInput(
-                    message="Enable thinking mode? (↑↓ navigate, Enter select, Ctrl+C cancel):",
-                    options=thinking_choices,
-                    default="on" if curr_thinking else "off",
-                ).prompt_async()
-            except (EOFError, KeyboardInterrupt):
-                return
+        thinking_choices: list[tuple[str, str]] = [
+            ("off", "off" + (" (current)" if not curr_thinking else "")),
+            ("on", "on" + (" (current)" if curr_thinking else "")),
+        ]
+        try:
+            thinking_selection = await ChoiceInput(
+                message="Enable thinking mode? (↑↓ navigate, Enter select, Ctrl+C cancel):",
+                options=thinking_choices,
+                default="on" if curr_thinking else "off",
+            ).prompt_async()
+        except (EOFError, KeyboardInterrupt):
+            return
 
-            if not thinking_selection:
-                return
+        if not thinking_selection:
+            return
 
-            new_thinking = thinking_selection == "on"
+        new_thinking = thinking_selection == "on"
     else:
         new_thinking = False
 

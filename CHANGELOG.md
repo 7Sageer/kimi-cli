@@ -11,7 +11,7 @@ Only write entries that are worth mentioning to users.
 
 ## Unreleased
 
-- Core: Pin thinking mode to the session on first invocation to stop mid-session toggles from breaking conversation history. Previously, creating a session with `default_thinking=false` and later resuming it with `default_thinking=true` (or vice versa) caused `400 - thinking is enabled but reasoning_content is missing in assistant tool call message at index N` errors from Anthropic-compatible endpoints, because historical assistant tool-call messages generated without thinking blocks cannot be replayed when thinking is now enabled. Kimi-cli now records the thinking mode on the session state the first time it sees one and forces resumes to use that recorded value. Sessions resumed for the first time after this change (with no recorded mode) are pinned to `thinking=false` whenever they already have a replayable history, since that is the safe default for tool-call messages without reasoning blocks. The shell `/model` command and the ACP `set_session_model` request now refuse thinking changes on sessions with existing history — start a new session to switch modes.
+- Core: Normalize conversation history for the active thinking mode before each model call. When thinking is disabled or unsupported, persisted thinking blocks are stripped from replayed history; when thinking is enabled for a legacy no-thinking tool-call history, Kimi-cli first creates a compaction boundary so raw assistant tool-call messages without reasoning blocks are not replayed into a thinking request. This prevents `400 - thinking is enabled but reasoning_content is missing in assistant tool call message at index N` errors without permanently pinning thinking mode to the session.
 
 ## 1.42.0 (2026-05-11)
 

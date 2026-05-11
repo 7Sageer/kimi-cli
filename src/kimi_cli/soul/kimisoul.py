@@ -57,10 +57,14 @@ from kimi_cli.soul.context import Context
 from kimi_cli.soul.dynamic_injection import (
     DynamicInjection,
     DynamicInjectionProvider,
-    normalize_history,
 )
 from kimi_cli.soul.dynamic_injections.afk_mode import AfkModeInjectionProvider
 from kimi_cli.soul.dynamic_injections.plan_mode import PlanModeInjectionProvider
+from kimi_cli.soul.history_normalization import (
+    llm_uses_thinking,
+    needs_thinking_switch_compaction,
+    normalize_history_for_llm,
+)
 from kimi_cli.soul.message import check_message, system, system_reminder, tool_result_to_message
 from kimi_cli.soul.slash import registry as soul_slash_registry
 from kimi_cli.soul.toolset import KimiToolset
@@ -938,6 +942,12 @@ class KimiSoul:
         # already checked in `run`
         assert self._runtime.llm is not None
         chat_provider = self._runtime.llm.chat_provider
+        thinking_enabled = llm_uses_thinking(self._runtime.llm)
+
+        if needs_thinking_switch_compaction(
+            self._context.history, thinking_enabled=thinking_enabled
+        ):
+            await self._compact_for_thinking_switch()
 
         if self._runtime.role == "root":
 
@@ -981,8 +991,11 @@ class KimiSoul:
                 )
             )
 
-        # Normalize: merge adjacent user messages for clean API input
-        effective_history = normalize_history(self._context.history)
+        # Normalize persisted history into a request shape that matches the
+        # current model/thinking mode.
+        effective_history = normalize_history_for_llm(
+            self._context.history, thinking_enabled=thinking_enabled
+        )
 
         async def _run_step_once() -> StepResult:
             # run an LLM step (may be interrupted)
@@ -1095,6 +1108,36 @@ class KimiSoul:
         if result.tool_calls:
             return None
         return StepOutcome(stop_reason="no_tool_calls", assistant_message=result.message)
+
+    async def _compact_for_thinking_switch(self) -> None:
+        """Create a safe replay boundary before enabling thinking on legacy history."""
+        logger.info(
+            "Compacting context before replaying legacy no-thinking tool-call history "
+            "with thinking enabled"
+        )
+        original_compaction = self._compaction
+        preserve_current_user = (
+            1 if self._context.history and self._context.history[-1].role == "user" else 0
+        )
+        self._compaction = SimpleCompaction(max_preserved_messages=preserve_current_user)
+        try:
+            await self.compact_context(
+                custom_instruction=(
+                    "The next request is switching into thinking mode. Preserve the user's "
+                    "latest request and summarize prior tool calls/results as plain text; do "
+                    "not preserve raw assistant tool-call messages."
+                )
+            )
+        finally:
+            self._compaction = original_compaction
+
+        assert self._runtime.llm is not None
+        if needs_thinking_switch_compaction(
+            self._context.history, thinking_enabled=llm_uses_thinking(self._runtime.llm)
+        ):
+            raise RuntimeError(
+                "Thinking switch compaction did not remove incompatible tool-call history"
+            )
 
     async def _grow_context(self, result: StepResult, tool_results: list[ToolResult]):
         logger.debug("Growing context with result: {result}", result=result)
