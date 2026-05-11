@@ -42,6 +42,15 @@ class SessionState(BaseModel):
     auto_archive_exempt: bool = False
     # Todo list state
     todos: list[TodoItemState] = Field(default_factory=list)  # pyright: ignore[reportUnknownVariableType]
+    # Thinking mode pinned to the session. None means "not yet recorded" (legacy
+    # session or never observed). Once set, the value cannot be changed within
+    # the same session — resumes that ask for a different thinking mode are
+    # forced back to this value and the `/model` slash command refuses thinking
+    # changes on sessions with existing history. The user must start a new
+    # session to switch modes. This keeps the conversation history consistent
+    # with the API's thinking + tool-use requirements (assistant tool-call
+    # messages must carry reasoning blocks iff thinking is enabled).
+    thinking: bool | None = None
 
 
 _LEGACY_METADATA_FILENAME = "metadata.json"

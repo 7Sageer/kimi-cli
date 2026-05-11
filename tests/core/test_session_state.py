@@ -89,6 +89,32 @@ class TestSessionState:
         assert loaded.approval.yolo is True
         assert loaded.approval.auto_approve_actions == {"Shell", "WriteFile"}
 
+    def test_thinking_default_is_none(self):
+        """A fresh SessionState has no pinned thinking mode."""
+        assert SessionState().thinking is None
+
+    def test_thinking_roundtrip(self, state_dir: Path):
+        """thinking pin survives save/load."""
+        state_dir.mkdir(parents=True)
+        for value in (True, False):
+            save_session_state(SessionState(thinking=value), state_dir)
+            assert load_session_state(state_dir).thinking is value
+
+    def test_thinking_absent_in_old_state_loads_as_none(self, state_dir: Path):
+        """state.json written before this field existed loads with thinking=None."""
+        state_dir.mkdir(parents=True)
+        state_file = state_dir / "state.json"
+        state_file.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "approval": {"yolo": False, "auto_approve_actions": []},
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert load_session_state(state_dir).thinking is None
+
     def test_custom_title_roundtrip(self, state_dir: Path):
         state_dir.mkdir(parents=True)
         state = SessionState(

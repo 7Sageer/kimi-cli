@@ -11,6 +11,8 @@ Only write entries that are worth mentioning to users.
 
 ## Unreleased
 
+- Core: Pin thinking mode to the session on first invocation to stop mid-session toggles from breaking conversation history. Previously, creating a session with `default_thinking=false` and later resuming it with `default_thinking=true` (or vice versa) caused `400 - thinking is enabled but reasoning_content is missing in assistant tool call message at index N` errors from Anthropic-compatible endpoints, because historical assistant tool-call messages generated without thinking blocks cannot be replayed when thinking is now enabled. Kimi-cli now records the thinking mode on the session state the first time it sees one and forces resumes to use that recorded value. Sessions resumed for the first time after this change (with no recorded mode) are pinned to `thinking=false` whenever they already have a replayable history, since that is the safe default for tool-call messages without reasoning blocks. The shell `/model` command and the ACP `set_session_model` request now refuse thinking changes on sessions with existing history — start a new session to switch modes.
+
 ## 1.42.0 (2026-05-11)
 
 - Shell: Switch the Windows shell backend from PowerShell to Git Bash, so the Shell tool now runs commands through `bash.exe` (POSIX semantics) instead of `powershell.exe`. Windows users get the same Unix-style command syntax (`&&`, `||`, `|`, `/dev/null`, `grep`, `sed`, etc.) as Linux/macOS. **Requires Git for Windows installed**: kimi-cli locates `bash.exe` via the `KIMI_CLI_GIT_BASH_PATH` env override → `where.exe git` → standard install paths (`C:\Program Files\Git\bin\bash.exe`); if none resolve, kimi-cli prints an install hint and exits at startup

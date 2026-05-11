@@ -229,8 +229,52 @@ class KimiCLI:
         assert model is not None
         env_overrides = augment_provider_with_env_vars(provider, model)
 
-        # determine thinking mode
-        thinking = config.default_thinking if thinking is None else thinking
+        # determine thinking mode.
+        # The mode is pinned to the session on first use: switching it mid-session
+        # produces conversation histories that the API cannot replay (assistant
+        # tool-call messages generated without thinking blocks cannot be sent back
+        # with thinking enabled, and vice versa). We record the chosen mode on the
+        # session state the first time we see it and enforce that value afterwards.
+        #
+        # Legacy sessions created before the pin existed have state.thinking=None
+        # but may have replayable history. Pinning them to whatever the user
+        # currently requests would reproduce the original 400 error (their
+        # history was overwhelmingly created with thinking=False, and they may
+        # now have default_thinking=True). For those, force the pin to False —
+        # the safe default that matches existing tool-call messages without
+        # reasoning blocks. Users who want thinking on can start a new session.
+        requested_thinking = config.default_thinking if thinking is None else thinking
+        _persist_pin = False
+        if session.state.thinking is None:
+            if resumed and not session.wire_file.is_empty():
+                chosen = False
+                if requested_thinking != chosen:
+                    logger.warning(
+                        "Resumed legacy session; pinning thinking=False to keep "
+                        "existing history replayable. Ignoring requested "
+                        "thinking={requested}.",
+                        requested=requested_thinking,
+                    )
+                    _write_original_stderr(
+                        "Note: thinking pinned to False for this resumed "
+                        "session (history was created without thinking blocks). "
+                        "Use /new to start a fresh session if you need thinking on.\n"
+                    )
+            else:
+                chosen = requested_thinking
+            session.state.thinking = chosen
+            thinking = chosen
+            _persist_pin = True
+        else:
+            if requested_thinking != session.state.thinking:
+                logger.warning(
+                    "Session was created with thinking={pinned}; "
+                    "ignoring requested thinking={requested}. "
+                    "Start a new session to use a different thinking mode.",
+                    pinned=session.state.thinking,
+                    requested=requested_thinking,
+                )
+            thinking = session.state.thinking
 
         # determine yolo mode
         yolo = yolo if yolo else config.default_yolo
@@ -250,6 +294,12 @@ class KimiCLI:
             logger.info("Using LLM provider: {provider}", provider=provider)
             logger.info("Using LLM model: {model}", model=model)
             logger.info("Thinking mode: {thinking}", thinking=thinking)
+
+        # Persist the thinking pin only after create_llm did not raise — a
+        # failing LLM init must not leave the session permanently locked to a
+        # mode the user may want to retry away from.
+        if _persist_pin:
+            session.save_state()
 
         if startup_progress is not None:
             startup_progress("Scanning workspace...")
